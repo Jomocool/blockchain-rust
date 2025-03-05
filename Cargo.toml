@@ -2,6 +2,7 @@
 authors = ["Jomo"]
 version = "0.1.0"
 edition = "2021"
+description = "基于Substrate的智能合约系统"
 
 [workspace]
 resolver = "2"

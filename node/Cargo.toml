@@ -9,7 +9,7 @@ build = "build.rs"
 targets = ["x86_64-unknown-linux-gnu"]
 
 [[bin]]
-name = "substrate-contracts-node"
+name = "contracts-node"
 path = "src/main.rs"
 
 [dependencies]

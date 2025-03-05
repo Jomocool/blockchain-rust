@@ -22,66 +22,6 @@ fn load_spec(id: &str) -> std::result::Result<Box<dyn ChainSpec>, String> {
 	})
 }
 
-impl SubstrateCli for Cli {
-	fn impl_name() -> String {
-		"Substrate Contracts Node".into()
-	}
-
-	fn impl_version() -> String {
-		env!("SUBSTRATE_CLI_IMPL_VERSION").into()
-	}
-
-	fn description() -> String {
-		env!("CARGO_PKG_DESCRIPTION").into()
-	}
-
-	fn author() -> String {
-		env!("CARGO_PKG_AUTHORS").into()
-	}
-
-	fn support_url() -> String {
-		"https://github.com/paritytech/substrate-contracts-node/issues/new".into()
-	}
-
-	fn copyright_start_year() -> i32 {
-		2021
-	}
-
-	fn load_spec(&self, id: &str) -> std::result::Result<Box<dyn sc_service::ChainSpec>, String> {
-		load_spec(id)
-	}
-}
-
-impl SubstrateCli for RelayChainCli {
-	fn impl_name() -> String {
-		"Substrate Contracts Node".into()
-	}
-
-	fn impl_version() -> String {
-		env!("SUBSTRATE_CLI_IMPL_VERSION").into()
-	}
-
-	fn description() -> String {
-		env!("CARGO_PKG_DESCRIPTION").into()
-	}
-
-	fn author() -> String {
-		env!("CARGO_PKG_AUTHORS").into()
-	}
-
-	fn support_url() -> String {
-		"https://github.com/paritytech/substrate-contracts-node/issues/new".into()
-	}
-
-	fn copyright_start_year() -> i32 {
-		2020
-	}
-
-	fn load_spec(&self, id: &str) -> std::result::Result<Box<dyn sc_service::ChainSpec>, String> {
-		polkadot_cli::Cli::from_iter([RelayChainCli::executable_name()].iter()).load_spec(id)
-	}
-}
-
 macro_rules! construct_async_run {
 	(|$components:ident, $cli:ident, $cmd:ident, $config:ident| $( $code:tt )* ) => {{
 		let runner = $cli.create_runner($cmd)?;
@@ -210,6 +150,7 @@ pub fn run() -> Result<()> {
 							.into())
 					}
 				},
+				// 处理区块基准测试命令
 				BenchmarkCmd::Block(cmd) => runner.sync_run(|config| {
 					let partials = new_partial(&config)?;
 					cmd.run(partials.client)
@@ -228,19 +169,21 @@ pub fn run() -> Result<()> {
 					let storage = partials.backend.expose_storage();
 					cmd.run(config, partials.client.clone(), db, storage)
 				}),
-				BenchmarkCmd::Machine(cmd) => {
-					runner.sync_run(|config| cmd.run(&config, SUBSTRATE_REFERENCE_HARDWARE.clone()))
-				},
-
+				// 处理机器基准测试命令
+				BenchmarkCmd::Machine(cmd) =>
+					runner.sync_run(|config| cmd.run(&config, SUBSTRATE_REFERENCE_HARDWARE.clone())),
+				// 处理不受支持的基准测试子命令
 				#[allow(unreachable_patterns)]
 				_ => Err("Benchmarking sub-command unsupported".into()),
 			}
 		},
-		// 无子命令时执行的操作
+		// 无子命令时执行的操作,运行节点
 		None => {
+			// 创建并配置Runner对象，用于运行节点
 			let runner = cli.create_runner(&cli.run.normalize())?;
 			let collator_options = cli.run.collator_options();
 
+			// 使用闭包定义节点的运行逻辑，并异步执行直到节点退出
 			runner.run_node_until_exit(|config| async move {
 				// 处理开发链的情况
 				if config.chain_spec.name() == "Development" {

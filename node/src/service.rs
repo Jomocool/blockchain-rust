@@ -148,6 +148,31 @@ fn build_import_queue(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// 启动共识算法Aura。
+///
+/// 该函数初始化并启动Aura共识算法，用于在Parachain节点中达成共识。它通过一系列参数配置来实现这一点，
+/// 包括客户端、后端、区块导入、Proposer工厂、Collator服务等。
+///
+/// # 参数
+///
+/// * `client` - Parachain客户端的Arc包装，用于与客户端交互。
+/// * `backend` - Parachain后端的Arc包装，用于存储和检索链数据。
+/// * `block_import` - 区块导入对象，用于导入新的区块到链中。
+/// * `prometheus_registry` - 可选的Prometheus注册表引用，用于监控指标。
+/// * `telemetry` - 可选的Telemetry句柄，用于遥测。
+/// * `task_manager` - 任务管理器的引用，用于管理异步任务。
+/// * `relay_chain_interface` - Relay链接口的Arc包装，用于与Relay链交互。
+/// * `transaction_pool` - 交易池的Arc包装，用于管理待处理的交易。
+/// * `keystore` - 密钥库的指针，用于存储和管理密钥。
+/// * `relay_chain_slot_duration` - Relay链的插槽持续时间。
+/// * `para_id` - Parachain的ID。
+/// * `collator_key` - Collator的密钥对。
+/// * `overseer_handle` - Overseer句柄，用于与Overseer交互。
+/// * `announce_block` - 一个用于广播新区块的回调函数。
+///
+/// # 返回值
+///
+/// 返回一个Result，表示操作是否成功。如果成功，返回Ok(()); 如果失败，返回一个错误。
 fn start_consensus(
 	client: Arc<ParachainClient>,
 	backend: Arc<ParachainBackend>,
@@ -164,6 +189,7 @@ fn start_consensus(
 	overseer_handle: OverseerHandle,
 	announce_block: Arc<dyn Fn(Hash, Option<Vec<u8>>) + Send + Sync>,
 ) -> Result<(), sc_service::Error> {
+	// 创建Proposer工厂，用于生成Proposer实例。
 	let proposer_factory = sc_basic_authorship::ProposerFactory::with_proof_recording(
 		task_manager.spawn_handle(),
 		client.clone(),
@@ -172,8 +198,10 @@ fn start_consensus(
 		telemetry.clone(),
 	);
 
+	// 使用Proposer工厂创建Proposer实例。
 	let proposer = Proposer::new(proposer_factory);
 
+	// 初始化Collator服务，用于处理Collation任务。
 	let collator_service = CollatorService::new(
 		client.clone(),
 		Arc::new(task_manager.spawn_handle()),
@@ -181,6 +209,7 @@ fn start_consensus(
 		client.clone(),
 	);
 
+	// 配置Aura参数，用于启动Aura共识。
 	let params = AuraParams {
 		create_inherent_data_providers: move |_, ()| async move { Ok(()) },
 		block_import,
@@ -201,15 +230,33 @@ fn start_consensus(
 		reinitialize: false,
 	};
 
+	// 启动Aura共识算法。
 	let fut = aura::run::<Block, sp_consensus_aura::sr25519::AuthorityPair, _, _, _, _, _, _, _, _>(
 		params,
 	);
 	task_manager.spawn_essential_handle().spawn("aura", None, fut);
 
+	// 如果一切顺利，返回Ok表示成功。
 	Ok(())
 }
 
 #[sc_tracing::logging::prefix_logs_with("Parachain")]
+/// 启动一个 parachain 节点的异步函数。
+///
+/// 该函数负责初始化和启动一个 parachain 节点，包括配置准备、网络构建、任务启动等。
+/// 它接受多个配置参数，并返回一个包含任务管理器和 parachain 客户端的弧形引用的结果。
+///
+/// # 参数
+///
+/// * `parachain_config`: Parachain 的配置信息。
+/// * `polkadot_config`: Polkadot 中继链的配置信息。
+/// * `collator_options`: Collator 的配置选项。
+/// * `para_id`: Parachain 的 ID。
+/// * `hwbench`: 可选的硬件基准测试信息。
+///
+/// # 返回值
+///
+/// 返回一个结果，包含任务管理器和 parachain 客户端的弧形引用。
 pub async fn start_parachain_node(
 	parachain_config: Configuration,
 	polkadot_config: Configuration,
@@ -217,8 +264,10 @@ pub async fn start_parachain_node(
 	para_id: ParaId,
 	hwbench: Option<sc_sysinfo::HwBench>,
 ) -> sc_service::error::Result<(TaskManager, Arc<ParachainClient>)> {
+	// 准备节点配置。
 	let parachain_config = prepare_node_config(parachain_config);
 
+	// 创建新的部分组件。
 	let params = new_partial(&parachain_config)?;
 	let (block_import, mut telemetry, telemetry_worker_handle) = params.other;
 	let prometheus_registry = parachain_config.prometheus_registry().cloned();
@@ -232,6 +281,7 @@ pub async fn start_parachain_node(
 	let backend = params.backend.clone();
 	let mut task_manager = params.task_manager;
 
+	// 构建 relay chain 接口。
 	let (relay_chain_interface, collator_key) = build_relay_chain_interface(
 		polkadot_config,
 		&parachain_config,
@@ -243,10 +293,12 @@ pub async fn start_parachain_node(
 	.await
 	.map_err(|e| sc_service::Error::Application(Box::new(e) as Box<_>))?;
 
+	// 检查节点角色是否为验证者。
 	let validator = parachain_config.role.is_authority();
 	let transaction_pool = params.transaction_pool.clone();
 	let import_queue_service = params.import_queue.service();
 
+	// 构建网络。
 	let (network, system_rpc_tx, tx_handler_controller, start_network, sync_service) =
 		build_network(BuildNetworkParams {
 			parachain_config: &parachain_config,
@@ -261,6 +313,7 @@ pub async fn start_parachain_node(
 		})
 		.await?;
 
+	// 如果配置了 offchain worker，则启动 offchain workers runner。
 	if parachain_config.offchain_worker.enabled {
 		use futures::FutureExt;
 
@@ -284,6 +337,7 @@ pub async fn start_parachain_node(
 		);
 	}
 
+	// 设置 RPC 构建器。
 	let rpc_builder = {
 		let client = client.clone();
 		let transaction_pool = transaction_pool.clone();
@@ -296,6 +350,7 @@ pub async fn start_parachain_node(
 		})
 	};
 
+	// 启动任务。
 	sc_service::spawn_tasks(sc_service::SpawnTasksParams {
 		rpc_builder,
 		client: client.clone(),
@@ -311,6 +366,7 @@ pub async fn start_parachain_node(
 		telemetry: telemetry.as_mut(),
 	})?;
 
+	// 如果提供了硬件基准测试信息，则打印并上传到 telemetry。
 	if let Some(hwbench) = hwbench {
 		sc_sysinfo::print_hwbench(&hwbench);
 		match SUBSTRATE_REFERENCE_HARDWARE.check_hardware(&hwbench, false) {
@@ -333,17 +389,21 @@ pub async fn start_parachain_node(
 		}
 	}
 
+	// 设置区块公告。
 	let announce_block = {
 		let sync_service = sync_service.clone();
 		Arc::new(move |hash, data| sync_service.announce_block(hash, data))
 	};
 
+	// 设置 relay chain slot 时长。
 	let relay_chain_slot_duration = Duration::from_secs(6);
 
+	// 获取 overseer handle。
 	let overseer_handle = relay_chain_interface
 		.overseer_handle()
 		.map_err(|e| sc_service::Error::Application(Box::new(e)))?;
 
+	// 启动 relay chain 任务。
 	start_relay_chain_tasks(StartRelayChainTasksParams {
 		client: client.clone(),
 		announce_block: announce_block.clone(),
@@ -361,6 +421,7 @@ pub async fn start_parachain_node(
 		sync_service: sync_service.clone(),
 	})?;
 
+	// 如果节点是验证者，则启动共识。
 	if validator {
 		start_consensus(
 			client.clone(),
@@ -380,7 +441,9 @@ pub async fn start_parachain_node(
 		)?;
 	}
 
+	// 启动网络。
 	start_network.start_network();
 
+	// 返回任务管理器和客户端。
 	Ok((task_manager, client))
 }
