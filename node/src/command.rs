@@ -22,6 +22,66 @@ fn load_spec(id: &str) -> std::result::Result<Box<dyn ChainSpec>, String> {
 	})
 }
 
+impl SubstrateCli for Cli {
+	fn impl_name() -> String {
+		"Substrate Contracts Node".into()
+	}
+
+	fn impl_version() -> String {
+		env!("SUBSTRATE_CLI_IMPL_VERSION").into()
+	}
+
+	fn description() -> String {
+		env!("CARGO_PKG_DESCRIPTION").into()
+	}
+
+	fn author() -> String {
+		env!("CARGO_PKG_AUTHORS").into()
+	}
+
+	fn support_url() -> String {
+		"https://github.com/paritytech/substrate-contracts-node/issues/new".into()
+	}
+
+	fn copyright_start_year() -> i32 {
+		2021
+	}
+
+	fn load_spec(&self, id: &str) -> std::result::Result<Box<dyn sc_service::ChainSpec>, String> {
+		load_spec(id)
+	}
+}
+
+impl SubstrateCli for RelayChainCli {
+	fn impl_name() -> String {
+		"Substrate Contracts Node".into()
+	}
+
+	fn impl_version() -> String {
+		env!("SUBSTRATE_CLI_IMPL_VERSION").into()
+	}
+
+	fn description() -> String {
+		env!("CARGO_PKG_DESCRIPTION").into()
+	}
+
+	fn author() -> String {
+		env!("CARGO_PKG_AUTHORS").into()
+	}
+
+	fn support_url() -> String {
+		"".into()
+	}
+
+	fn copyright_start_year() -> i32 {
+		2020
+	}
+
+	fn load_spec(&self, id: &str) -> std::result::Result<Box<dyn sc_service::ChainSpec>, String> {
+		polkadot_cli::Cli::from_iter([RelayChainCli::executable_name()].iter()).load_spec(id)
+	}
+}
+
 macro_rules! construct_async_run {
 	(|$components:ident, $cli:ident, $cmd:ident, $config:ident| $( $code:tt )* ) => {{
 		let runner = $cli.create_runner($cmd)?;

@@ -18,9 +18,9 @@ type FullBackend = sc_service::TFullBackend<Block>;
 // 定义全文选择链类型别名
 type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 
-/// 创建新的部分组件
+/// 创建新的组件
 ///
-/// 该函数初始化并返回节点服务的部分组件，包括客户端、后端、选择链、导入队列、交易池和可选的遥测
+/// 该函数初始化并返回节点服务的部分组件，包括客户端、后端、选择链、导入队列、交易池
 pub fn new_partial(
 	config: &Configuration,
 ) -> Result<
@@ -61,7 +61,7 @@ pub fn new_partial(
 	// 创建选择链
 	let select_chain = sc_consensus::LongestChain::new(backend.clone());
 
-	// 启动遥测工作线程
+	// 启动工作线程
 	let telemetry = telemetry.map(|(worker, telemetry)| {
 		task_manager.spawn_handle().spawn("telemetry", None, worker.run());
 		telemetry
@@ -83,7 +83,7 @@ pub fn new_partial(
 		client.clone(),
 	);
 
-	// 返回部分组件
+	// 返回组件
 	Ok(sc_service::PartialComponents {
 		client,
 		backend,

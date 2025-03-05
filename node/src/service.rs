@@ -41,6 +41,7 @@ type ParachainBackend = TFullBackend<Block>;
 
 type ParachainBlockImport = TParachainBlockImport<Block, Arc<ParachainClient>, ParachainBackend>;
 
+// 定义一个名为Service的类型别名，它代表了一组部分组件，这些组件是构建 parachain 节点所必需的。
 pub type Service = PartialComponents<
 	ParachainClient,
 	ParachainBackend,
@@ -50,7 +51,9 @@ pub type Service = PartialComponents<
 	(ParachainBlockImport, Option<Telemetry>, Option<TelemetryWorkerHandle>),
 >;
 
+// 构建并返回一个新的部分组件集合。这个函数初始化了 parachain 节点的核心组件。
 pub fn new_partial(config: &Configuration) -> Result<Service, sc_service::Error> {
+	// 根据配置初始化telemetry，如果配置了telemetry端点，则创建telemetry工作器和telemetry句柄。
 	let telemetry = config
 		.telemetry_endpoints
 		.clone()
@@ -62,11 +65,13 @@ pub fn new_partial(config: &Configuration) -> Result<Service, sc_service::Error>
 		})
 		.transpose()?;
 
+	// 根据配置确定堆页面的数量，如果没有配置，则使用默认的堆分配策略。
 	let heap_pages = config
 		.executor
 		.default_heap_pages
 		.map_or(DEFAULT_HEAP_ALLOC_STRATEGY, |h| HeapAllocStrategy::Static { extra_pages: h as _ });
 
+	// 构建一个 parachain 特定的执行器，它将用于执行 runtime 代码。
 	let executor = ParachainExecutor::builder()
 		.with_execution_method(config.executor.wasm_method)
 		.with_onchain_heap_alloc_strategy(heap_pages)
@@ -75,6 +80,7 @@ pub fn new_partial(config: &Configuration) -> Result<Service, sc_service::Error>
 		.with_runtime_cache_size(config.executor.runtime_cache_size)
 		.build();
 
+	// 初始化客户端、后端、密钥库容器和任务管理器
 	let (client, backend, keystore_container, task_manager) =
 		sc_service::new_full_parts_record_import::<Block, RuntimeApi, _>(
 			config,
@@ -84,13 +90,16 @@ pub fn new_partial(config: &Configuration) -> Result<Service, sc_service::Error>
 		)?;
 	let client = Arc::new(client);
 
+	// 获取telemetry工作器的句柄，以便稍后启动telemetry任务。
 	let telemetry_worker_handle = telemetry.as_ref().map(|(worker, _)| worker.handle());
 
+	// 如果配置了telemetry，则启动telemetry任务。
 	let telemetry = telemetry.map(|(worker, telemetry)| {
 		task_manager.spawn_handle().spawn("telemetry", None, worker.run());
 		telemetry
 	});
 
+	// 创建一个全功能的交易池，它将用于管理待处理的交易。
 	let transaction_pool = sc_transaction_pool::BasicPool::new_full(
 		config.transaction_pool.clone(),
 		config.role.is_authority().into(),
@@ -99,8 +108,10 @@ pub fn new_partial(config: &Configuration) -> Result<Service, sc_service::Error>
 		client.clone(),
 	);
 
+	// 创建一个区块导入对象，它将用于导入新的区块到链中。
 	let block_import = ParachainBlockImport::new(client.clone(), backend.clone());
 
+	// 构建一个导入队列，它将用于处理和导入新的区块。
 	let import_queue = build_import_queue(
 		client.clone(),
 		block_import.clone(),
@@ -109,6 +120,7 @@ pub fn new_partial(config: &Configuration) -> Result<Service, sc_service::Error>
 		&task_manager,
 	);
 
+	// 返回包含所有初始化组件的部分组件集合。
 	Ok(PartialComponents {
 		backend,
 		client,
@@ -121,6 +133,22 @@ pub fn new_partial(config: &Configuration) -> Result<Service, sc_service::Error>
 	})
 }
 
+/// 构建导入队列
+///
+/// 该函数初始化并返回一个区块导入队列，该队列用于处理待导入的区块。
+/// 它配置了用于验证 Aura 共识算法的必要检查，包括时间戳的验证。
+///
+/// # 参数
+///
+/// * `client` - 区块链客户端，用于与区块链数据交互。
+/// * `block_import` - 区块导入对象，负责实际的区块导入工作。
+/// * `config` - 区块链配置的引用，包含启动配置信息。
+/// * `telemetry` - 可选的telemetry句柄，用于性能监控和日志记录。
+/// * `task_manager` - 任务管理器的引用，用于管理异步任务。
+///
+/// # 返回值
+///
+/// 返回一个默认的区块导入队列，用于处理和验证待导入的区块。
 fn build_import_queue(
 	client: Arc<ParachainClient>,
 	block_import: ParachainBlockImport,
@@ -128,6 +156,7 @@ fn build_import_queue(
 	telemetry: Option<TelemetryHandle>,
 	task_manager: &TaskManager,
 ) -> sc_consensus::DefaultImportQueue<Block> {
+	// 初始化一个完全验证的导入队列，用于检测 Aura 共识算法中的等价性违规行为
 	cumulus_client_consensus_aura::equivocation_import_queue::fully_verifying_import_queue::<
 		sp_consensus_aura::sr25519::AuthorityPair,
 		_,
@@ -137,12 +166,16 @@ fn build_import_queue(
 	>(
 		client,
 		block_import,
+		// 定义一个闭包，用于在必要时提供时间戳 inherent 数据
 		move |_, _| async move {
 			let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
 			Ok(timestamp)
 		},
+		// 提供一个任务管理器的必要句柄，用于异步任务的管理
 		&task_manager.spawn_essential_handle(),
+		// 提供 Prometheus 注册表，用于监控指标的收集
 		config.prometheus_registry(),
+		// 提供可选的telemetry句柄，用于远程监控和日志记录
 		telemetry,
 	)
 }
@@ -159,7 +192,7 @@ fn build_import_queue(
 /// * `backend` - Parachain后端的Arc包装，用于存储和检索链数据。
 /// * `block_import` - 区块导入对象，用于导入新的区块到链中。
 /// * `prometheus_registry` - 可选的Prometheus注册表引用，用于监控指标。
-/// * `telemetry` - 可选的Telemetry句柄，用于遥测。
+/// * `telemetry` - 可选的Telemetry句柄，用于telemetry。
 /// * `task_manager` - 任务管理器的引用，用于管理异步任务。
 /// * `relay_chain_interface` - Relay链接口的Arc包装，用于与Relay链交互。
 /// * `transaction_pool` - 交易池的Arc包装，用于管理待处理的交易。
@@ -244,7 +277,7 @@ fn start_consensus(
 /// 启动一个 parachain 节点的异步函数。
 ///
 /// 该函数负责初始化和启动一个 parachain 节点，包括配置准备、网络构建、任务启动等。
-/// 它接受多个配置参数，并返回一个包含任务管理器和 parachain 客户端的弧形引用的结果。
+/// 它接受多个配置参数，并返回一个包含任务管理器和 parachain 客户端。
 ///
 /// # 参数
 ///
@@ -256,7 +289,7 @@ fn start_consensus(
 ///
 /// # 返回值
 ///
-/// 返回一个结果，包含任务管理器和 parachain 客户端的弧形引用。
+/// 返回包含任务管理器和 parachain 客户端。
 pub async fn start_parachain_node(
 	parachain_config: Configuration,
 	polkadot_config: Configuration,

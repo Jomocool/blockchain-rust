@@ -8,16 +8,28 @@ use serde::{Deserialize, Serialize};
 use sp_core::{sr25519, Pair, Public};
 use sp_runtime::traits::{IdentifyAccount, Verify};
 
+// 定义链规范类型的别名
 pub type ChainSpec = sc_service::GenericChainSpec<Extensions>;
 
+// 定义安全的XCM版本常量
 const SAFE_XCM_VERSION: u32 = xcm::prelude::XCM_VERSION;
 
+/// 从种子字符串获取公共钥匙
+/// 
+/// # 参数
+/// 
+/// * `seed`: 种子字符串
+/// 
+/// # 返回值
+/// 
+/// 返回指定公共钥匙类型`TPublic`的实例
 pub fn get_from_seed<TPublic: Public>(seed: &str) -> <TPublic::Pair as Pair>::Public {
 	TPublic::Pair::from_string(&format!("//{}", seed), None)
 		.expect("static values are valid; qed")
 		.public()
 }
 
+/// 定义链规范的扩展属性
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ChainSpecGroup, ChainSpecExtension)]
 #[serde(deny_unknown_fields)]
 pub struct Extensions {
@@ -27,18 +39,46 @@ pub struct Extensions {
 	pub para_id: u32,
 }
 
+/// 从链规范中获取扩展属性
+/// 
+/// # 参数
+/// 
+/// * `chain_spec`: 链规范实例
+/// 
+/// # 返回值
+/// 
+/// 返回扩展属性的引用
 impl Extensions {
 	pub fn try_get(chain_spec: &dyn sc_service::ChainSpec) -> Option<&Self> {
 		sc_chain_spec::get_extension(chain_spec.extensions())
 	}
 }
 
+// 定义账户公共钥匙类型的别名
 type AccountPublic = <Signature as Verify>::Signer;
 
+/// 从种子字符串获取收集者钥匙
+/// 
+/// # 参数
+/// 
+/// * `seed`: 种子字符串
+/// 
+/// # 返回值
+/// 
+/// 返回`AuraId`类型的实例
 pub fn get_collator_keys_from_seed(seed: &str) -> AuraId {
 	get_from_seed::<AuraId>(seed)
 }
 
+/// 从种子字符串获取账户ID
+/// 
+/// # 参数
+/// 
+/// * `seed`: 种子字符串
+/// 
+/// # 返回值
+/// 
+/// 返回`AccountId`类型的实例
 pub fn get_account_id_from_seed<TPublic: Public>(seed: &str) -> AccountId
 where
 	AccountPublic: From<<TPublic::Pair as Pair>::Public>,
@@ -46,10 +86,24 @@ where
 	AccountPublic::from(get_from_seed::<TPublic>(seed)).into_account()
 }
 
+/// 创建模板会话钥匙
+/// 
+/// # 参数
+/// 
+/// * `keys`: Aura钥匙
+/// 
+/// # 返回值
+/// 
+/// 返回包含Aura钥匙的`SessionKeys`实例
 pub fn template_session_keys(keys: AuraId) -> contracts_parachain_runtime::SessionKeys {
 	contracts_parachain_runtime::SessionKeys { aura: keys }
 }
 
+/// 生成本地测试网配置
+/// 
+/// # 返回值
+/// 
+/// 返回`ChainSpec`实例，配置了本地测试网
 pub fn local_testnet_config() -> ChainSpec {
 	let mut properties = sc_chain_spec::Properties::new();
 	properties.insert("tokenSymbol".into(), "UNIT".into());
@@ -98,6 +152,18 @@ pub fn local_testnet_config() -> ChainSpec {
 	.build()
 }
 
+/// 生成测试网创世配置
+/// 
+/// # 参数
+/// 
+/// * `invulnerables`: 收集者账户和钥匙对的向量
+/// * `endowed_accounts`: 被赋予初始余额的账户向量
+/// * `root`: 根账户
+/// * `id`: Parachain ID
+/// 
+/// # 返回值
+/// 
+/// 返回一个JSON值，表示创世配置
 fn testnet_genesis(
 	invulnerables: Vec<(AccountId, AuraId)>,
 	endowed_accounts: Vec<AccountId>,
