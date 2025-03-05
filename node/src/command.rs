@@ -94,13 +94,16 @@ macro_rules! construct_async_run {
 }
 
 pub fn run() -> Result<()> {
+	// 初始化CLI参数
 	let mut cli = Cli::from_args();
 
+	// 如果没有指定链，则强制开发模式
 	if cli.run.base.shared_params.chain.is_none() {
 		log::debug!("forcing dev mode");
 		cli.run.base.shared_params.dev = true;
 	}
 
+	// 如果没有指定日志级别，则设置默认日志级别
 	if cli.run.base.shared_params.log.is_empty() {
 		cli.run.base.shared_params.log = vec![
 			"runtime::contracts=debug".into(),
@@ -110,40 +113,51 @@ pub fn run() -> Result<()> {
 		];
 	}
 
+	// 根据cli子命令执行相应的操作
 	match &cli.subcommand {
+		// 构建规范命令
 		Some(Subcommand::BuildSpec(cmd)) => {
+			// 创建并运行命令的runner
 			let runner = cli.create_runner(cmd)?;
 			runner.sync_run(|config| cmd.run(config.chain_spec, config.network))
 		},
+		// 检查区块命令
 		Some(Subcommand::CheckBlock(cmd)) => {
+			// 构建并异步运行命令
 			construct_async_run!(|components, cli, cmd, config| {
 				Ok(cmd.run(components.client, components.import_queue))
 			})
 		},
+		// 导出区块命令
 		Some(Subcommand::ExportBlocks(cmd)) => {
 			construct_async_run!(|components, cli, cmd, config| {
 				Ok(cmd.run(components.client, config.database))
 			})
 		},
+		// 导出状态命令
 		Some(Subcommand::ExportState(cmd)) => {
 			construct_async_run!(|components, cli, cmd, config| {
 				Ok(cmd.run(components.client, config.chain_spec))
 			})
 		},
+		// 导入区块命令
 		Some(Subcommand::ImportBlocks(cmd)) => {
 			construct_async_run!(|components, cli, cmd, config| {
 				Ok(cmd.run(components.client, components.import_queue))
 			})
 		},
+		// 回滚命令
 		Some(Subcommand::Revert(cmd)) => {
 			construct_async_run!(|components, cli, cmd, config| {
 				Ok(cmd.run(components.client, components.backend, None))
 			})
 		},
+		// 清除链命令
 		Some(Subcommand::PurgeChain(cmd)) => {
 			let runner = cli.create_runner(cmd)?;
 
 			runner.sync_run(|config| {
+				// 创建并配置RelayChainCli
 				let polkadot_cli = RelayChainCli::new(
 					&config,
 					[RelayChainCli::executable_name()].iter().chain(cli.relay_chain_args.iter()),
@@ -159,25 +173,31 @@ pub fn run() -> Result<()> {
 				cmd.run(config, polkadot_config)
 			})
 		},
+		// 导出创世头命令
 		Some(Subcommand::ExportGenesisHead(cmd)) => {
 			let runner = cli.create_runner(cmd)?;
 			runner.sync_run(|config| {
+				// 创建部分组件并运行命令
 				let partials = new_partial(&config)?;
 
 				cmd.run(partials.client)
 			})
 		},
+		// 导出创世Wasm命令
 		Some(Subcommand::ExportGenesisWasm(cmd)) => {
 			let runner = cli.create_runner(cmd)?;
 			runner.sync_run(|_config| {
+				// 加载规范并运行命令
 				let spec = cli.load_spec(&cmd.shared_params.chain.clone().unwrap_or_default())?;
 				cmd.run(&*spec)
 			})
 		},
+		// 基准测试命令
 		Some(Subcommand::Benchmark(cmd)) => {
 			let runner = cli.create_runner(cmd)?;
 			match cmd {
 				BenchmarkCmd::Pallet(cmd) => {
+					// 检查是否启用了runtime基准测试功能
 					if cfg!(feature = "runtime-benchmarks") {
 						runner.sync_run(|config| {
 							cmd.run_with_spec::<sp_runtime::traits::HashingFor<Block>, ()>(Some(
@@ -186,7 +206,7 @@ pub fn run() -> Result<()> {
 						})
 					} else {
 						Err("Benchmarking wasn't enabled when building the node. \
-					You can enable it with `--features runtime-benchmarks`."
+	                        You can enable it with `--features runtime-benchmarks`."
 							.into())
 					}
 				},
@@ -194,10 +214,11 @@ pub fn run() -> Result<()> {
 					let partials = new_partial(&config)?;
 					cmd.run(partials.client)
 				}),
+				// 存储基准测试命令
 				#[cfg(not(feature = "runtime-benchmarks"))]
 				BenchmarkCmd::Storage(_) => Err(sc_cli::Error::Input(
 					"Compile with --features=runtime-benchmarks \
-						to enable storage benchmarks."
+	                    to enable storage benchmarks."
 						.into(),
 				)),
 				#[cfg(feature = "runtime-benchmarks")]
@@ -215,11 +236,13 @@ pub fn run() -> Result<()> {
 				_ => Err("Benchmarking sub-command unsupported".into()),
 			}
 		},
+		// 无子命令时执行的操作
 		None => {
 			let runner = cli.create_runner(&cli.run.normalize())?;
 			let collator_options = cli.run.collator_options();
 
 			runner.run_node_until_exit(|config| async move {
+				// 处理开发链的情况
 				if config.chain_spec.name() == "Development" {
 					return dev::new_full::<sc_network::NetworkWorker<_, _>>(
 						config,
@@ -228,6 +251,7 @@ pub fn run() -> Result<()> {
 					.map_err(sc_cli::Error::Service);
 				}
 
+				// 硬件基准测试
 				let hwbench = (!cli.no_hardware_benchmarks)
 					.then_some(config.database.path().map(|database_path| {
 						let _ = std::fs::create_dir_all(database_path);
@@ -238,10 +262,12 @@ pub fn run() -> Result<()> {
 					}))
 					.flatten();
 
+				// 获取 parachain ID
 				let para_id = chain_spec::Extensions::try_get(&*config.chain_spec)
 					.map(|e| e.para_id)
 					.ok_or("Could not find parachain ID in chain-spec.")?;
 
+				// 配置RelayChainCli
 				let polkadot_cli = RelayChainCli::new(
 					&config,
 					[RelayChainCli::executable_name()].iter().chain(cli.relay_chain_args.iter()),
@@ -256,6 +282,7 @@ pub fn run() -> Result<()> {
 
 				info!("Is collating: {}", if config.role.is_authority() { "yes" } else { "no" });
 
+				// 启动parachain节点
 				crate::service::start_parachain_node(
 					config,
 					polkadot_config,
