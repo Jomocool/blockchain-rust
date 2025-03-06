@@ -4,9 +4,13 @@ pub mod constants {
 		weights::{constants, RuntimeDbWeight},
 	};
 
+	// 定义数据库操作的权重参数
 	parameter_types! {
-						pub const ParityDbWeight: RuntimeDbWeight = RuntimeDbWeight {
+		// ParityDbWeight是一个公开常量，用于表示数据库读写操作的权重
+		pub const ParityDbWeight: RuntimeDbWeight = RuntimeDbWeight {
+			// 读操作的权重，单位是纳秒
 			read: 8_000 * constants::WEIGHT_REF_TIME_PER_NANOS,
+			// 写操作的权重，单位是纳秒
 			write: 50_000 * constants::WEIGHT_REF_TIME_PER_NANOS,
 		};
 	}

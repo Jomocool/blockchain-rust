@@ -4,9 +4,13 @@ pub mod constants {
 		weights::{constants, RuntimeDbWeight},
 	};
 
+	// 定义数据库操作的权重参数
 	parameter_types! {
-						pub const RocksDbWeight: RuntimeDbWeight = RuntimeDbWeight {
+		// 定义RocksDbWeight常量，用于表示数据库读写操作的权重
+		pub const RocksDbWeight: RuntimeDbWeight = RuntimeDbWeight {
+			// 数据库读操作的权重，单位是纳秒
 			read: 25_000 * constants::WEIGHT_REF_TIME_PER_NANOS,
+			// 数据库写操作的权重，单位是纳秒
 			write: 100_000 * constants::WEIGHT_REF_TIME_PER_NANOS,
 		};
 	}
